@@ -50,7 +50,7 @@ python scripts/04_rally_clips.py \
 | heatmap rendering   | working       |
 | rally segmentation  | working       |
 | ball tracking       | working (TrackNet ONNX adapter — bring your own model) |
-| player tracking     | **stub (TODO)** |
+| player tracking     | working (YOLOv8 + ByteTrack — bring your own weights)  |
 
 ## Tests
 

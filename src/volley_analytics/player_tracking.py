@@ -1,6 +1,6 @@
-"""Player tracking — STUB.
+"""Player tracking.
 
-Contract for the rest of the pipeline (do not change):
+Public contract — DO NOT change without updating downstream consumers:
 
     players.csv columns:
         frame, track_id, x_px, y_px, w_px, h_px, conf
@@ -10,17 +10,19 @@ Contract for the rest of the pipeline (do not change):
       The homography only behaves well for things resting on the floor.
     - track_id must be PERSISTENT — same player across frames → same id.
 
-Recommended stack:
-    - YOLOv8 (`ultralytics`) for `person` detection
-    - ByteTrack (`ultralytics`'s built-in tracker) for ID persistence
-    - Optional: SAM 3 prompts ("white-shirt player" vs "red-shirt player")
-      when team-vs-background contrast confuses jersey colors.
+The default `PlayerTracker` uses YOLOv8 (`ultralytics`) for `person`
+detection plus the built-in ByteTrack tracker for ID persistence. Switch
+the YOLO weights via `model_path` (the default downloads `yolov8n.pt`
+on first use) and the tracker config via `tracker_config` (defaults to
+the bundled `bytetrack.yaml`; `botsort.yaml` also ships with ultralytics).
 
-Concrete next step:
-    after ball tracking is wired, implement `PlayerTracker.track` using
-    `ultralytics.YOLO("yolov8n.pt").track(source=frames, tracker="bytetrack.yaml")`
-    and emit `PlayerDetection` per (frame, box). Filter `cls == 0` (person)
-    only.
+When team-vs-background contrast confuses jersey colors, SAM 3 prompts
+(`"white-shirt player"` vs `"red-shirt player"`) can replace or augment
+this YOLO+ByteTrack layer — but the CSV contract stays the same.
+
+Run with:
+    pip install -e ".[tracking]"     # pulls ultralytics + lap
+    python scripts/02_track.py --video <video> --skip-ball
 """
 
 from __future__ import annotations
@@ -31,6 +33,10 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 import numpy as np
+
+
+# YOLO COCO class id for "person".
+PERSON_CLASS_ID = 0
 
 
 @dataclass
@@ -49,31 +55,73 @@ class PlayerDetection:
 
 
 class PlayerTracker:
-    """Per-frame player detector + tracker. Stub — see module docstring."""
+    """YOLOv8 + ByteTrack per-frame player detector with persistent IDs.
 
-    def __init__(self, model_path: str | None = None, conf_threshold: float = 0.4):
-        self.model_path = model_path
+    Emits zero or more PlayerDetection per input frame. Detections whose
+    tracker has not yet assigned an ID (first frame of life, before
+    ByteTrack confirms) are dropped — only confirmed, persistent IDs hit
+    the CSV.
+    """
+
+    def __init__(
+        self,
+        model_path: str | None = None,
+        conf_threshold: float = 0.4,
+        tracker_config: str = "bytetrack.yaml",
+        verbose: bool = False,
+    ):
+        # None → ultralytics default yolov8n.pt (auto-downloaded).
+        self.model_path = model_path or "yolov8n.pt"
         self.conf_threshold = conf_threshold
+        self.tracker_config = tracker_config
+        self.verbose = verbose
         self._model = None
-        self._tracker = None
+
+    def _load_model(self) -> None:
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:  # pragma: no cover - import guard
+            raise ImportError(
+                "ultralytics is required for player tracking. "
+                "Install with: pip install -e \".[tracking]\""
+            ) from exc
+
+        self._model = YOLO(self.model_path)
 
     def track(self, frames: Iterable[np.ndarray]) -> Iterator[PlayerDetection]:
-        # TODO(claude-code):
-        #   from ultralytics import YOLO
-        #   model = YOLO(self.model_path or "yolov8n.pt")
-        #   for i, frame in enumerate(frames):
-        #       res = model.track(frame, persist=True, tracker="bytetrack.yaml", classes=[0])
-        #       for box in res[0].boxes:
-        #           if box.conf < self.conf_threshold: continue
-        #           x, y, w, h = box.xywh[0].tolist()
-        #           yield PlayerDetection(
-        #               frame=i, track_id=int(box.id),
-        #               x_px=x, y_px=y, w_px=w, h_px=h,
-        #               conf=float(box.conf),
-        #           )
-        raise NotImplementedError(
-            "PlayerTracker.track is a stub. See module docstring."
-        )
+        if self._model is None:
+            self._load_model()
+        assert self._model is not None
+
+        for i, frame in enumerate(frames):
+            results = self._model.track(
+                frame,
+                persist=True,            # carry tracker state across calls
+                tracker=self.tracker_config,
+                classes=[PERSON_CLASS_ID],
+                conf=self.conf_threshold,
+                verbose=self.verbose,
+            )
+            if not results:
+                continue
+            boxes = results[0].boxes
+            if boxes is None or boxes.id is None:
+                continue  # no confirmed tracks this frame
+
+            ids = boxes.id.int().cpu().tolist()
+            xywh = boxes.xywh.cpu().tolist()
+            confs = boxes.conf.cpu().tolist()
+
+            for track_id, (cx, cy, w, h), conf in zip(ids, xywh, confs):
+                yield PlayerDetection(
+                    frame=i,
+                    track_id=int(track_id),
+                    x_px=float(cx),
+                    y_px=float(cy),
+                    w_px=float(w),
+                    h_px=float(h),
+                    conf=float(conf),
+                )
 
 
 # ──── CSV I/O ────────────────────────────────────────────────────────────────

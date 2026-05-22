@@ -32,7 +32,8 @@ players.csv + calibration ──► (Phase 2: positional analytics) ◄───
   - `rally_clip.py` — **working**. Gap-based rally segmentation + `ffmpeg -c copy` cuts.
   - `ball_tracking.py` — **working** (needs ONNX model file). TrackNet adapter
     targeting VballNetV1 seq9 grayscale 288×512. Contract: `ball.csv`.
-  - `player_tracking.py` — **STUB**. Contract: writes `players.csv` (frame, track_id, x_px, y_px, w_px, h_px, conf).
+  - `player_tracking.py` — **working** (needs YOLO weights). YOLOv8 +
+    ByteTrack adapter via `ultralytics`. Contract: `players.csv`.
   - `io_utils.py` — frame iteration, fps lookup.
 - `scripts/` — thin CLIs (`01_calibrate.py`, `02_track.py`, `03_heatmap.py`, `04_rally_clips.py`).
 - `tests/` — unit tests for the working modules.
@@ -67,22 +68,32 @@ frame, track_id, x_px, y_px, w_px, h_px, conf
 
 ## Next step — start here in Claude Code
 
-`BallTracker` is wired (TrackNet adapter for VballNetV1 seq9 grayscale
-288×512). To run it end-to-end on a real video:
+Both trackers are wired and unit-tested with mocks. The remaining work
+on Phase 1 is **verification on a real video**, not more code:
 
-1. Download a model from
+1. Get a ball model from
    https://github.com/asigatchov/fast-volleyball-tracking-inference
-   (recommended: `VballNetV1_seq9_grayscale_330_h288_w512.onnx`) into
-   `models/ball.onnx`.
-2. `pip install -e ".[tracking]"` to pull `onnxruntime`.
-3. `python scripts/02_track.py --video <test.mp4> --ball-model models/ball.onnx --skip-players`
-4. Then `03_heatmap` + `04_rally_clips` against the produced `ball.csv`.
+   (recommended: `VballNetV1_seq9_grayscale_330_h288_w512.onnx`) → `models/ball.onnx`.
+   YOLO weights (`yolov8n.pt`) download automatically on first run.
+2. `pip install -e ".[tracking]"` to pull `onnxruntime` + `ultralytics` + `lap`.
+3. Calibrate the court on the first frame:
+   `python scripts/01_calibrate.py --video <test.mp4> --out data/interim/calibration.json`
+4. Run both trackers:
+   `python scripts/02_track.py --video <test.mp4> --ball-model models/ball.onnx`
+5. Heatmap + rally clips:
+   `python scripts/03_heatmap.py --ball data/interim/ball.csv --calibration data/interim/calibration.json --out data/out/heatmap.png`
+   `python scripts/04_rally_clips.py --video <test.mp4> --ball data/interim/ball.csv --out-dir data/out/rallies`
 
-Next concrete task is player tracking in `player_tracking.py` —
-YOLOv8 (`ultralytics`) for `person` detection plus ByteTrack for ID
-persistence. SAM 3 prompts (`"white-shirt player"` vs
-`"red-shirt player"`) become useful if and only if jersey-vs-background
-contrast causes team confusion.
+After Phase 1 verifies on one real video, candidates for follow-up
+inside this repo:
+- **player heatmap**: extend `heatmap.py` to also consume `players.csv`
+  (use the foot point for court projection) — gives team formation /
+  side-preference visualizations.
+- **SAM 3 team split**: a `team_id` column on `players.csv` driven by
+  "white-shirt player" / "red-shirt player" text prompts — only worth it
+  if jersey-vs-background contrast confuses naive color clustering.
+- Phase 2+ (positional analytics, action classification) belongs in a
+  separate repo that consumes the CSV contracts here.
 
 ## Why this shape
 
