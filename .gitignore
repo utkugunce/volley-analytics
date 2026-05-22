@@ -1,0 +1,36 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Runtime data — keep dirs (via .gitkeep), drop contents
+data/raw/*
+data/interim/*
+data/out/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/out/.gitkeep
+
+# Model weights
+*.onnx
+*.pt
+*.pth
+models/
+
+# Media artifacts
+*.mp4
+*.mov
+*.mkv
+
+.DS_Store
+.idea/
+.vscode/
