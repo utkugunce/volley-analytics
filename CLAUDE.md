@@ -30,7 +30,8 @@ players.csv + calibration ──► (Phase 2: positional analytics) ◄───
   - `calibration.py` — **working**. 4-corner click → `cv2.findHomography` → pixel↔court (m).
   - `heatmap.py` — **working**. 2D histogram on court coordinates + gaussian smoothing.
   - `rally_clip.py` — **working**. Gap-based rally segmentation + `ffmpeg -c copy` cuts.
-  - `ball_tracking.py` — **STUB**. Contract: writes `ball.csv` (frame, x_px, y_px, conf).
+  - `ball_tracking.py` — **working** (needs ONNX model file). TrackNet adapter
+    targeting VballNetV1 seq9 grayscale 288×512. Contract: `ball.csv`.
   - `player_tracking.py` — **STUB**. Contract: writes `players.csv` (frame, track_id, x_px, y_px, w_px, h_px, conf).
   - `io_utils.py` — frame iteration, fps lookup.
 - `scripts/` — thin CLIs (`01_calibrate.py`, `02_track.py`, `03_heatmap.py`, `04_rally_clips.py`).
@@ -66,20 +67,21 @@ frame, track_id, x_px, y_px, w_px, h_px, conf
 
 ## Next step — start here in Claude Code
 
-Wire `BallTracker.track()` in `src/volley_analytics/ball_tracking.py` to a
-TrackNet-style ONNX model. Reference:
-https://github.com/asigatchov/fast-volleyball-tracking-inference
+`BallTracker` is wired (TrackNet adapter for VballNetV1 seq9 grayscale
+288×512). To run it end-to-end on a real video:
 
-The critical glue is mapping that model's per-frame output to the
-`ball.csv` contract `(frame, x_px, y_px, conf)`. Everything downstream
-depends only on that contract — once it fills correctly, the chain
-`02_track → 03_heatmap → 04_rally_clips` produces the first heatmap and
-rally clips end-to-end on a test video.
+1. Download a model from
+   https://github.com/asigatchov/fast-volleyball-tracking-inference
+   (recommended: `VballNetV1_seq9_grayscale_330_h288_w512.onnx`) into
+   `models/ball.onnx`.
+2. `pip install -e ".[tracking]"` to pull `onnxruntime`.
+3. `python scripts/02_track.py --video <test.mp4> --ball-model models/ball.onnx --skip-players`
+4. Then `03_heatmap` + `04_rally_clips` against the produced `ball.csv`.
 
-After ball tracking is wired, the next concrete task is player tracking
-in `player_tracking.py` — YOLOv8 (`ultralytics`) for `person` detection
-plus ByteTrack for ID persistence. SAM 3 prompts (`"white-shirt player"`
-vs `"red-shirt player"`) become useful if and only if jersey-vs-background
+Next concrete task is player tracking in `player_tracking.py` —
+YOLOv8 (`ultralytics`) for `person` detection plus ByteTrack for ID
+persistence. SAM 3 prompts (`"white-shirt player"` vs
+`"red-shirt player"`) become useful if and only if jersey-vs-background
 contrast causes team confusion.
 
 ## Why this shape
