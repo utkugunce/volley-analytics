@@ -3,8 +3,8 @@
 Computer-vision pipeline for amateur volleyball match video.
 **Phase 1**: court calibration → ball / player tracking → heatmap + rally clips.
 
-See [`CLAUDE.md`](./CLAUDE.md) for the full architecture, data contracts,
-and what's implemented vs. stubbed.
+- **Mimari + sözleşmeler**: [`CLAUDE.md`](./CLAUDE.md)
+- **Çalıştırma rehberi (TR)**: [`KULLANIM.md`](./KULLANIM.md)
 
 ## Install
 
